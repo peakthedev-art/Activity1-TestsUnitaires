@@ -1,5 +1,6 @@
 import os
 import shutil
+import tempfile
 from abc import ABC, abstractmethod
 
 """ File Manager Console Application 
@@ -38,6 +39,10 @@ class FileOperations(ABC):
     def delete(self, path):
         pass
 
+    @abstractmethod
+    def create_backup_dir(self):
+        pass
+
 
 class UserInterface(ABC):
     @abstractmethod
@@ -51,16 +56,19 @@ class UserInterface(ABC):
 
 class OsFileOperations(FileOperations):
     def copy(self, source, destination):
-        shutil.copy2(source, destination)
+        return shutil.copy2(source, destination)
 
     def move(self, source, destination):
-        shutil.move(source, destination)
+        return shutil.move(source, destination)
 
     def delete(self, path):
         if os.path.isdir(path):
             shutil.rmtree(path)
         else:
             os.remove(path)
+
+    def create_backup_dir(self):
+        return tempfile.mkdtemp()
 
 
 class ConsoleUserInterface(UserInterface):
@@ -69,9 +77,9 @@ class ConsoleUserInterface(UserInterface):
 
     def error_choice(self, error):
         print(f"Error: {error}")
-        print("0. Ignore  1. Always ignore  2. Stop")
+        print("0. Ignore  1. Always ignore  2. Stop  3. Cancel")
         choice = input("Your choice: ")
-        while choice not in ("0", "1", "2"):
+        while choice not in ("0", "1", "2", "3"):
             choice = input("Your choice: ")
         return int(choice)
 
@@ -173,11 +181,12 @@ class FileManager:
         self.file_operations = file_operations
         self.user_interface = user_interface
 
-    def apply_to_selection(self, operation, *args):
+    def apply_to_selection(self, operation, undo, *args):
         ignore_errors = False
+        done = []
         for file in self.selection.get_selected_files():
             try:
-                operation(file, *args)
+                done.append((file, operation(file, *args)))
             except Exception as e:
                 if ignore_errors:
                     continue
@@ -186,27 +195,44 @@ class FileManager:
                     ignore_errors = True
                 elif choice == 2:
                     break
+                elif choice == 3:
+                    for file, result in reversed(done):
+                        undo(file, result)
+                    return True
+        return False
+
+    def undo_copy(self, file, result):
+        self.file_operations.delete(result)
+
+    def undo_move(self, file, result):
+        self.file_operations.move(result, file)
+
+    def show_result(self, cancelled, message):
+        if cancelled:
+            self.user_interface.show_message("Operation cancelled")
+        else:
+            self.user_interface.show_message(message)
+        self.selection.clear_selection()
 
     def copy_files(self, destination):
         """Copy selected files"""
         selected_files = self.selection.get_selected_files()
-        self.apply_to_selection(self.file_operations.copy, destination)
-        self.user_interface.show_message(f"{len(selected_files)} file(s) copied")
-        self.selection.clear_selection()
+        cancelled = self.apply_to_selection(self.file_operations.copy, self.undo_copy, destination)
+        self.show_result(cancelled, f"{len(selected_files)} file(s) copied")
 
     def move_files(self, destination):
         """Move selected files"""
         selected_files = self.selection.get_selected_files()
-        self.apply_to_selection(self.file_operations.move, destination)
-        self.user_interface.show_message(f"{len(selected_files)} file(s) moved")
-        self.selection.clear_selection()
+        cancelled = self.apply_to_selection(self.file_operations.move, self.undo_move, destination)
+        self.show_result(cancelled, f"{len(selected_files)} file(s) moved")
 
     def delete_files(self):
         """Delete selected files"""
         selected_files = self.selection.get_selected_files()
-        self.apply_to_selection(self.file_operations.delete)
-        self.user_interface.show_message(f"{len(selected_files)} file(s)/folder(s) deleted")
-        self.selection.clear_selection()
+        backup_dir = self.file_operations.create_backup_dir()
+        cancelled = self.apply_to_selection(self.file_operations.move, self.undo_move, backup_dir)
+        self.file_operations.delete(backup_dir)
+        self.show_result(cancelled, f"{len(selected_files)} file(s)/folder(s) deleted")
 
 
 def main_menu():
