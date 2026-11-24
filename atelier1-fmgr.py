@@ -27,10 +27,6 @@ class SelectionSource(ABC):
 
 class FileOperations(ABC):
     @abstractmethod
-    def exists(self, path):
-        pass
-
-    @abstractmethod
     def copy(self, source, destination):
         pass
 
@@ -48,11 +44,12 @@ class UserInterface(ABC):
     def show_message(self, message):
         pass
 
+    @abstractmethod
+    def error_choice(self, error):
+        pass
+
 
 class OsFileOperations(FileOperations):
-    def exists(self, path):
-        return os.path.exists(path)
-
     def copy(self, source, destination):
         shutil.copy2(source, destination)
 
@@ -60,15 +57,23 @@ class OsFileOperations(FileOperations):
         shutil.move(source, destination)
 
     def delete(self, path):
-        if os.path.isfile(path):
-            os.remove(path)
-        elif os.path.isdir(path):
+        if os.path.isdir(path):
             shutil.rmtree(path)
+        else:
+            os.remove(path)
 
 
 class ConsoleUserInterface(UserInterface):
     def show_message(self, message):
         print(message)
+
+    def error_choice(self, error):
+        print(f"Error: {error}")
+        print("0. Ignore  1. Always ignore  2. Stop")
+        choice = input("Your choice: ")
+        while choice not in ("0", "1", "2"):
+            choice = input("Your choice: ")
+        return int(choice)
 
 
 class FileSelector(SelectionSource):
@@ -168,40 +173,40 @@ class FileManager:
         self.file_operations = file_operations
         self.user_interface = user_interface
 
+    def apply_to_selection(self, operation, *args):
+        ignore_errors = False
+        for file in self.selection.get_selected_files():
+            try:
+                operation(file, *args)
+            except Exception as e:
+                if ignore_errors:
+                    continue
+                choice = self.user_interface.error_choice(e)
+                if choice == 1:
+                    ignore_errors = True
+                elif choice == 2:
+                    break
+
     def copy_files(self, destination):
         """Copy selected files"""
-        try:
-            selected_files = self.selection.get_selected_files()
-            for file in selected_files:
-                if self.file_operations.exists(file):
-                    self.file_operations.copy(file, destination)
-            self.user_interface.show_message(f"{len(selected_files)} file(s) copied")
-            self.selection.clear_selection()
-        except Exception as e:
-            self.user_interface.show_message(f"Copy error: {e}")
+        selected_files = self.selection.get_selected_files()
+        self.apply_to_selection(self.file_operations.copy, destination)
+        self.user_interface.show_message(f"{len(selected_files)} file(s) copied")
+        self.selection.clear_selection()
 
     def move_files(self, destination):
         """Move selected files"""
-        try:
-            selected_files = self.selection.get_selected_files()
-            for file in selected_files:
-                if self.file_operations.exists(file):
-                    self.file_operations.move(file, destination)
-            self.user_interface.show_message(f"{len(selected_files)} file(s) moved")
-            self.selection.clear_selection()
-        except Exception as e:
-            self.user_interface.show_message(f"Move error: {e}")
+        selected_files = self.selection.get_selected_files()
+        self.apply_to_selection(self.file_operations.move, destination)
+        self.user_interface.show_message(f"{len(selected_files)} file(s) moved")
+        self.selection.clear_selection()
 
     def delete_files(self):
         """Delete selected files"""
-        try:
-            selected_files = self.selection.get_selected_files()
-            for file in selected_files:
-                self.file_operations.delete(file)
-            self.user_interface.show_message(f"{len(selected_files)} file(s)/folder(s) deleted")
-            self.selection.clear_selection()
-        except Exception as e:
-            self.user_interface.show_message(f"Delete error: {e}")
+        selected_files = self.selection.get_selected_files()
+        self.apply_to_selection(self.file_operations.delete)
+        self.user_interface.show_message(f"{len(selected_files)} file(s)/folder(s) deleted")
+        self.selection.clear_selection()
 
 
 def main_menu():
