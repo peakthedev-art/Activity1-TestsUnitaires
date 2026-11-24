@@ -64,10 +64,10 @@ class FileSelector:
         self.selected_files.clear()
 
 
-class FileManager:
-    def __init__(self):
+class FileExplorer:
+    def __init__(self, file_selector):
         self.current_path = os.path.expanduser('~')
-        self.file_selector = FileSelector()
+        self.file_selector = file_selector
 
     def display_directory_contents(self):
         """Display contents of the current directory"""
@@ -103,6 +103,12 @@ class FileManager:
         """Move to the parent directory"""
         self.current_path = os.path.dirname(self.current_path)
         self.display_directory_contents()
+
+
+class FileManager:
+    def __init__(self):
+        self.file_selector = FileSelector()
+        self.file_explorer = FileExplorer(self.file_selector)
 
     def copy_files(self, destination):
         """Copy selected files"""
@@ -145,6 +151,7 @@ class FileManager:
 
 def main_menu():
     file_manager = FileManager()
+    file_explorer = file_manager.file_explorer
     
     while True:
         print("\n--- File Explorer ---")
@@ -161,19 +168,19 @@ def main_menu():
         
         try:
             if choice == '1':
-                file_manager.display_directory_contents()
+                file_explorer.display_directory_contents()
             
             elif choice == '2':
                 index = int(input("Enter navigation index: "))
-                file_manager.navigate(index)
+                file_explorer.navigate(index)
             
             elif choice == '3':
-                file_manager.go_to_parent_directory()
+                file_explorer.go_to_parent_directory()
             
             elif choice == '4':
-                file_manager.display_directory_contents()
+                file_explorer.display_directory_contents()
                 indices = input("Enter file indices to select (comma-separated): ")
-                file_manager.file_selector.select_files_by_indices(indices, file_manager.current_path)
+                file_manager.file_selector.select_files_by_indices(indices, file_explorer.current_path)
             
             elif choice == '5':
                 dest = input("Enter destination path for copying: ")
